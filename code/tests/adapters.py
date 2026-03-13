@@ -562,57 +562,33 @@ def get_tokenizer(
     from cs336_basics.tokenizer import RegexTokenizer
 
     tokenizer = RegexTokenizer()
-
     tokenizer.vocab = dict(vocab)
-
-    byte_to_id: dict[bytes, int] = {}
-    for token_id, token_bytes in tokenizer.vocab.items():
-        if token_bytes not in byte_to_id or token_id < byte_to_id[token_bytes]:
-            byte_to_id[token_bytes] = token_id
-
+    # bytes -> id
+    byte_to_id: dict[bytes, int] = {b: i for i, b in vocab.items()}
+    # 构建 merges: (left_id, right_id) -> merged_id
     merges_by_id: dict[tuple[int, int], int] = {}
-    used_merge_ids: set[int] = set()
-    next_merge_id = 256
-
-    for left_bytes, right_bytes in merges:
-        if left_bytes not in byte_to_id or right_bytes not in byte_to_id:
-            raise ValueError("merge tokens must exist in vocab")
-
-        left_id = byte_to_id[left_bytes]
-        right_id = byte_to_id[right_bytes]
-        merged_bytes = left_bytes + right_bytes
-
-        if merged_bytes in byte_to_id and byte_to_id[merged_bytes] not in used_merge_ids:
-            merged_id = byte_to_id[merged_bytes]
-        else:
-            while next_merge_id in tokenizer.vocab or next_merge_id in used_merge_ids:
-                next_merge_id += 1
-            merged_id = next_merge_id
-            tokenizer.vocab[merged_id] = merged_bytes
-            byte_to_id[merged_bytes] = merged_id
-            next_merge_id += 1
-
+    for left_b, right_b in merges:
+        left_id = byte_to_id[left_b]
+        right_id = byte_to_id[right_b]
+        merged_id = byte_to_id[left_b + right_b]
         merges_by_id[(left_id, right_id)] = merged_id
-        used_merge_ids.add(merged_id)
-
     tokenizer.merges = merges_by_id
-
-    special_map: dict[str, int] = {}
+    # 构建 byte_encoder：单字节 bytes -> token id
+    tokenizer.byte_encoder = {}
+    for tid, b in tokenizer.vocab.items():
+        if len(b) == 1:
+            tokenizer.byte_encoder[b[0]] = tid
+    # special token 映射
     if special_tokens:
-        next_special_id = (max(tokenizer.vocab.keys()) + 1) if tokenizer.vocab else 0
-        for token in special_tokens:
-            token_bytes = token.encode("utf-8")
-            token_id = byte_to_id.get(token_bytes)
-            if token_id is None:
-                while next_special_id in tokenizer.vocab:
-                    next_special_id += 1
-                token_id = next_special_id
-                tokenizer.vocab[token_id] = token_bytes
-                byte_to_id[token_bytes] = token_id
-                next_special_id += 1
-            special_map[token] = token_id
-
-    tokenizer.register_special_tokens(special_map)
+        special_map = {}
+        for s in special_tokens:
+            sb = s.encode("utf-8")
+            if sb not in byte_to_id:
+                raise ValueError(f"special token not in vocab: {s}")
+            special_map[s] = byte_to_id[sb]
+        tokenizer.register_special_tokens(special_map)
+    else:
+        tokenizer.register_special_tokens({})
     return tokenizer
 
 

@@ -8,6 +8,7 @@ import unicodedata
 
 # 分块风格
 GPT4_SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+GPT2_SPLIT_PATTERN = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 """工具类方法"""
 def get_stats(ids, counts=None):
@@ -60,12 +61,13 @@ class RegexTokenizer():
 
     def __init__(self):
         self.merges = {} # (int, int) -> int
-        self.vocab = self._build_vocab() # int -> bytes
-        self.pattern = GPT4_SPLIT_PATTERN
-        self.compiled_pattern = re.compile(self.pattern)
         # 初始化特殊token映射及其反向映射 e.g.终止符等等
         self.special_tokens = {}
         self.inverse_special_tokens = {}
+        self.pattern = GPT2_SPLIT_PATTERN
+        self.compiled_pattern = re.compile(self.pattern)
+        self.byte_encoder = {i: i for i in range(256)}
+        self.vocab = self._build_vocab() # int -> bytes
 
     def train(self, input_path, vocab_size, special_tokens):
         # 计算需要合并的次数
@@ -117,7 +119,9 @@ class RegexTokenizer():
         # 更新反向映射
         self.inverse_special_tokens = {v: k for k, v in self.special_tokens.items()}
         # 重建词表
-        self.vocab = self._build_vocab()
+        # 仅把special写入已有vocab，避免破坏外部注入的GPT-2vocab
+        for tok, idx in self.special_tokens.items():
+            self.vocab[idx] = tok.encode("utf-8")
 
     def decode(self, ids):
         part_bytes = []
@@ -140,7 +144,7 @@ class RegexTokenizer():
         如该pair不在merges,结束
         否则执行替换，继续下一轮
         """
-        ids = list(text_bytes)
+        ids = [self.byte_encoder[b] for b in text_bytes]
         while len(ids) >= 2:
             stats = get_stats(ids)
             pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
@@ -185,7 +189,7 @@ class RegexTokenizer():
         if not special:
             return self.encode_ordinary(text)
         # 否则用re.split将文本分块
-        special_pattern = "(" + "|".join(re.escape(k) for k in special) + ")"
+        special_pattern = "(" + "|".join(re.escape(k) for k in sorted(special, key=len, reverse=True)) + ")"
         special_chunks = re.split(special_pattern, text)
         ids = []
         for part in special_chunks:
@@ -195,6 +199,10 @@ class RegexTokenizer():
                 ids.extend(self.encode_ordinary(part))
         return ids
     
+    def encode_iterable(self, iterable, allowed_special="all"):
+        for text in iterable:
+            yield from self.encode(text, allowed_special=allowed_special)
+
     def _build_vocab(self):
         # 构建词表
         # 放入0-255单字节token
@@ -277,3 +285,4 @@ class RegexTokenizer():
         self.vocab = self._build_vocab()
         self.compiled_pattern = re.compile(self.pattern)
         self.inverse_special_tokens = {v: k for k, v in self.special_tokens.items()}
+        self.byte_encoder = {i: i for i in range(256)}
