@@ -93,10 +93,36 @@ class RoPE:
         self.device = device
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        # x: (..., seq_len, d_k)
-        # token_positions: (..., seq_len) or (seq_len,)
-        # TODO: 实现 RoPE 旋转
-        raise NotImplementedError
+        in_dtype = x.dtype
+        x_fp32 = x.to(torch.float32)
+
+        half = self.d_k // 2
+        i = torch.arange(half, device=x.device, dtype=torch.float32)
+        inv_freq = self.theta ** (-2.0 * i / self.d_k)  # (half,)
+
+        # 显式把 token_positions reshape 成可广播到 x 的形状：
+        # target: (*prefix_dims, seq_len, 1), 其中 prefix_dims 数量 = x.ndim - 2
+        prefix_ndim = x.ndim - 2
+        pos_prefix_ndim = token_positions.ndim - 1
+        num_missing = prefix_ndim - pos_prefix_ndim
+        
+        pos_shape = token_positions.shape[:-1] + (1,) * num_missing + (token_positions.shape[-1], 1)
+        pos = token_positions.to(device=x.device, dtype=torch.float32).reshape(pos_shape)
+
+        angles = pos * inv_freq  # (*prefix_dims, seq_len, half)
+        cos = torch.cos(angles)
+        sin = torch.sin(angles)
+
+        # 把最后一维按 pair 拆开做旋转
+        x_pair = x_fp32.reshape(*x_fp32.shape[:-1], half, 2)
+        x0 = x_pair[..., 0]
+        x1 = x_pair[..., 1]
+
+        y0 = x0 * cos - x1 * sin
+        y1 = x0 * sin + x1 * cos
+
+        out = torch.stack((y0, y1), dim=-1).reshape_as(x_fp32)
+        return out.to(in_dtype)
 
 
 class MultiHeadSelfAttention:
