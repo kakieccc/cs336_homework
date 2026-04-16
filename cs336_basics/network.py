@@ -9,8 +9,11 @@ def silu(x: torch.Tensor) -> torch.Tensor:
 
 
 def softmax(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
-    # TODO: 数值稳定版 softmax（先减最大值）
-    raise NotImplementedError
+    x_max = torch.amax(x, dim=dim, keepdim=True)
+    x_shifted = x - x_max
+    exp_x = torch.exp(x_shifted)
+    return exp_x / torch.sum(exp_x, dim=dim, keepdim=True)
+    
 
 
 class Linear(nn.Module):
@@ -73,14 +76,12 @@ def scaled_dot_product_attention(
     V: torch.Tensor,  # (..., k_len, d_v)
     mask: Optional[torch.Tensor] = None,  # (..., q_len, k_len), bool
 ) -> torch.Tensor:
-    # TODO:
-    # d_k = Q.shape[-1]
-    # scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
-    # if mask is not None:
-    #     scores = scores.masked_fill(~mask, -torch.finfo(scores.dtype).max)
-    # probs = softmax(scores, dim=-1)
-    # return probs @ V
-    raise NotImplementedError
+    d_k = Q.shape[-1]
+    scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
+    if mask is not None:
+        scores = scores.masked_fill(~mask, -torch.finfo(scores.dtype).max)
+    probs = softmax(scores, dim=-1)
+    return probs @ V
 
 
 class RoPE:
