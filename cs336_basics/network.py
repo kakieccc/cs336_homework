@@ -126,7 +126,7 @@ class RoPE:
         return out.to(in_dtype)
 
 
-class MultiHeadSelfAttention:
+class MultiHeadSelfAttention(nn.Module):
     def __init__(
         self,
         d_model: int,
@@ -137,6 +137,7 @@ class MultiHeadSelfAttention:
         device=None,
         dtype=None,
     ):
+        super().__init__()
         if d_model % num_heads != 0:
             raise ValueError("d_model must be divisible by num_heads.")
         self.d_model = d_model
@@ -170,13 +171,13 @@ class MultiHeadSelfAttention:
         v = self._split_heads(self.v_proj.forward(x))
 
         if self.use_rope:
-            # TODO: 对 q 和 k 应用 RoPE；v 不做 RoPE
+            # 对 q 和 k 应用 RoPE；v 不做 RoPE
             if token_positions is None:
                 raise ValueError("token_positions is required when use_rope=True.")
             q = self.rope.forward(q, token_positions)
             k = self.rope.forward(k, token_positions)
 
-        # 因果 mask: (1, 1, s, s)
+        # mask: (1, 1, s, s)
         s = x.shape[1]
         causal = torch.tril(torch.ones((s, s), dtype=torch.bool, device=x.device)).view(1, 1, s, s)
 
