@@ -58,8 +58,9 @@ class RMSNorm(nn.Module):
         return rmsnorm.to(in_dtype)
 
 
-class SwiGLU:
+class SwiGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device=None, dtype=None):
+        super().__init__()
         self.w1 = Linear(d_model, d_ff, device=device, dtype=dtype)
         self.w2 = Linear(d_ff, d_model, device=device, dtype=dtype)
         self.w3 = Linear(d_model, d_ff, device=device, dtype=dtype)
@@ -186,7 +187,7 @@ class MultiHeadSelfAttention(nn.Module):
         return self.output_proj.forward(out)
 
 
-class TransformerBlock:
+class TransformerBlock(nn.Module):
     def __init__(
         self,
         d_model: int,
@@ -198,6 +199,7 @@ class TransformerBlock:
         device=None,
         dtype=None,
     ):
+        super().__init__()
         self.ln1 = RMSNorm(d_model, eps=eps, device=device, dtype=dtype)
         self.attn = MultiHeadSelfAttention(
             d_model=d_model,
@@ -213,11 +215,12 @@ class TransformerBlock:
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         # Pre-Norm
-        # TODO: x = x + attn(ln1(x)); x = x + ffn(ln2(x))
-        raise NotImplementedError
+        x = x + self.attn(self.ln1(x), token_positions)
+        x = x + self.ffn(self.ln2(x))
+        return x
 
 
-class TransformerLM:
+class TransformerLM(nn.Module):
     def __init__(
         self,
         vocab_size: int,
@@ -231,12 +234,13 @@ class TransformerLM:
         device=None,
         dtype=None,
     ):
+        super().__init__()
         self.vocab_size = vocab_size
         self.context_length = context_length
         self.d_model = d_model
 
         self.token_embeddings = Embedding(vocab_size, d_model, device=device, dtype=dtype)
-        self.layers = [
+        self.layers = nn.ModuleList([
             TransformerBlock(
                 d_model=d_model,
                 num_heads=num_heads,
@@ -248,7 +252,7 @@ class TransformerLM:
                 dtype=dtype,
             )
             for _ in range(num_layers)
-        ]
+        ])
         self.ln_final = RMSNorm(d_model, eps=eps, device=device, dtype=dtype)
         self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
 
