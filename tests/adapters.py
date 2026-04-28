@@ -630,37 +630,13 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    from cs336_basics.tokenizer import RegexTokenizer
+    from cs336_basics.tokenizer import Tokenizer
 
-    tokenizer = RegexTokenizer()
-    tokenizer.vocab = dict(vocab)
-    # bytes -> id
-    byte_to_id: dict[bytes, int] = {b: i for i, b in vocab.items()}
-    # 构建 merges: (left_id, right_id) -> merged_id
-    merges_by_id: dict[tuple[int, int], int] = {}
-    for left_b, right_b in merges:
-        left_id = byte_to_id[left_b]
-        right_id = byte_to_id[right_b]
-        merged_id = byte_to_id[left_b + right_b]
-        merges_by_id[(left_id, right_id)] = merged_id
-    tokenizer.merges = merges_by_id
-    # 构建 byte_encoder：单字节 bytes -> token id
-    tokenizer.byte_encoder = {}
-    for tid, b in tokenizer.vocab.items():
-        if len(b) == 1:
-            tokenizer.byte_encoder[b[0]] = tid
-    # special token 映射
-    if special_tokens:
-        special_map = {}
-        for s in special_tokens:
-            sb = s.encode("utf-8")
-            if sb not in byte_to_id:
-                raise ValueError(f"special token not in vocab: {s}")
-            special_map[s] = byte_to_id[sb]
-        tokenizer.register_special_tokens(special_map)
-    else:
-        tokenizer.register_special_tokens({})
-    return tokenizer
+    return Tokenizer.from_vocab_merges(
+        vocab=vocab,
+        merges=merges,
+        special_tokens=special_tokens,
+    )
 
 
 def run_train_bpe(
@@ -690,19 +666,11 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    from cs336_basics.tokenizer import RegexTokenizer
+    from cs336_basics.tokenizer import Tokenizer
 
-    with open(input_path, "r", encoding="utf-8") as f:
-        text = f.read()
-
-    tokenizer = RegexTokenizer()
-
-    # RegexTokenizer.train currently expects corpus text string.
-    tokenizer.train(text, vocab_size, special_tokens)
-
-    vocab = dict(tokenizer.vocab)
-    merges = [
-        (tokenizer.vocab[left_id], tokenizer.vocab[right_id])
-        for (left_id, right_id) in tokenizer.merges.keys()
-    ]
-    return vocab, merges
+    return Tokenizer.train_bpe(
+        input_path=input_path,
+        vocab_size=vocab_size,
+        special_tokens=special_tokens,
+        **kwargs,
+    )
